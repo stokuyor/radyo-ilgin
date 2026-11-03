@@ -16,6 +16,7 @@ import { AutoScanner } from './components/AutoScanner';
 import { RetroRotaryKnob } from './components/RetroRotaryKnob';
 import { FavoritesManager } from './components/FavoritesManager';
 import { RecordingModule } from './components/RecordingModule';
+import { ChannelDirectory } from './components/ChannelDirectory';
 import { retroAudio } from './utils/audioEffects';
 
 export default function App() {
@@ -658,6 +659,16 @@ export default function App() {
                 favoriteIds={favoriteIds}
                 allStations={STATIONS}
                 onToggleFavorite={handleToggleFavorite}
+                onSelectStation={handleSelectStation}
+                nightMode={nightMode}
+              />
+            </div>
+
+            {/* TÜM KANALLAR REHBERİ (Arama & Kategori Filtreleri) */}
+            <div className="w-full">
+              <ChannelDirectory
+                stations={stationsInScope}
+                currentStation={currentStation}
                 onSelectStation={handleSelectStation}
                 nightMode={nightMode}
               />
