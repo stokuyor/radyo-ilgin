@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer utilities {
+  .font-cinzel {
+    font-family: 'Cinzel', serif;
+  }
+  .font-mono-retro {
+    font-family: 'Space Mono', monospace;
+  }
+  .font-sans-retro {
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* Speaker grill weave texture */
+  .speaker-grill-pattern {
+    background-color: #2b231c;
+    background-image: radial-gradient(rgba(245, 187, 108, 0.15) 1px, transparent 1px),
+      radial-gradient(rgba(0, 0, 0, 0.6) 1px, transparent 1px);
+    background-size: 8px 8px;
+    background-position: 0 0, 4px 4px;
+  }
+
+  .speaker-grill-light {
+    background-color: #d1b89d;
+    background-image: radial-gradient(rgba(87, 56, 31, 0.3) 1.5px, transparent 1.5px),
+      radial-gradient(rgba(255, 255, 255, 0.5) 1.5px, transparent 1.5px);
+    background-size: 8px 8px;
+    background-position: 0 0, 4px 4px;
+  }
+
+  /* Analog radio glass dial reflection */
+  .dial-glass-glare {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.05) 35%,
+      rgba(255, 255, 255, 0) 50%,
+      rgba(0, 0, 0, 0.15) 100%
+    );
+  }
+
+  /* Vintage metal knurled border */
+  .knurl-edge {
+    background: repeating-conic-gradient(
+      from 0deg,
+      #9c7c4c 0deg 4deg,
+      #e8ca92 4deg 8deg,
+      #7a5e35 8deg 12deg
+    );
+  }
+
+  .knurl-edge-dark {
+    background: repeating-conic-gradient(
+      from 0deg,
+      #292524 0deg 4deg,
+      #57534e 4deg 8deg,
+      #1c1917 8deg 12deg
+    );
+  }
+
+  /* Realistic Wood Finish Gradient */
+  .vintage-wood-casing {
+    background: linear-gradient(
+      180deg,
+      #451a03 0%,
+      #321302 20%,
+      #290f02 80%,
+      #1a0901 100%
+    );
+  }
+
+  .vintage-wood-casing-light {
+    background: linear-gradient(
+      180deg,
+      #9a6237 0%,
+      #78421d 20%,
+      #5b3013 80%,
+      #452109 100%
+    );
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "ILGIN RADYO",
+  "description": "Türkiye ve dünya frekanslarını otomatik ve nostaljik döner kadranla dinleyebileceğiniz, canlı yayın kaydedip indirebileceğiniz retro analog radyo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
