@@ -71,9 +71,14 @@ export const RecordingModule: React.FC<RecordingModuleProps> = ({
         setLastDownload(result);
         const sizeMb = (result.sizeBytes / (1024 * 1024)).toFixed(2);
         setToastMessage(
-          `Kayıt tamamlandı! Dosya cihazınıza indirildi: ${result.fileName} (${formatTime(result.durationSeconds)}, ${sizeMb} MB)`
+          `✓ Kayıt tamamlandı! Ses dosyası cihazınıza indirildi: ${result.fileName} (${formatTime(result.durationSeconds)}, ${sizeMb} MB)`
         );
         setTimeout(() => setToastMessage(null), 6000);
+      } else {
+        setToastMessage(
+          'Kayıt çok kısa sürdüğü için ses dosyası oluşturulamadı. Lütfen en az 3-4 saniye kaydedin.'
+        );
+        setTimeout(() => setToastMessage(null), 5000);
       }
     } catch {
       setIsRecording(false);

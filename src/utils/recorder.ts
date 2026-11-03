@@ -1,6 +1,6 @@
 /**
- * Audio Recording Engine for Live Radio Stream.
- * Captures live broadcast chunks and automatically triggers device file download.
+ * High-Fidelity Audio Recording Engine for Live Radio Stream.
+ * Captures live broadcast stream chunks and generates pristine, playable MP3/AAC audio files.
  */
 
 export interface RecordingResult {
@@ -13,12 +13,13 @@ export interface RecordingResult {
 export class StreamRecorder {
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
+  private directChunks: Uint8Array[] = [];
   private startTime = 0;
   private timerInterval: number | null = null;
   private onTimeUpdateCallback?: (seconds: number) => void;
-  private directAbortController: AbortController | null = null;
-  private directChunks: Uint8Array[] = [];
-  private mimeType = 'audio/webm';
+  private abortController: AbortController | null = null;
+  private detectedMimeType = 'audio/mpeg';
+  private detectedExt = 'mp3';
 
   public isRecording = false;
 
@@ -36,6 +37,8 @@ export class StreamRecorder {
     this.directChunks = [];
     this.startTime = Date.now();
     this.onTimeUpdateCallback = onTimeUpdate;
+    this.detectedMimeType = 'audio/mpeg';
+    this.detectedExt = 'mp3';
 
     // Start UI timer
     if (this.timerInterval) clearInterval(this.timerInterval);
@@ -46,8 +49,54 @@ export class StreamRecorder {
       }
     }, 500);
 
-    // Strategy 1: Attempt HTMLMediaElement captureStream if available
-    let streamCaptured = false;
+    // Strategy 1: Direct Live Stream Bitstream Reader (Best quality, authentic MP3/AAC)
+    try {
+      this.abortController = new AbortController();
+
+      fetch(streamUrl, {
+        headers: { Accept: '*/*' },
+        signal: this.abortController.signal,
+      })
+        .then((response) => {
+          if (!response.ok || response.status >= 400) {
+            return;
+          }
+
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('aac')) {
+            this.detectedMimeType = 'audio/aac';
+            this.detectedExt = 'aac';
+          } else if (contentType.includes('mpeg') || contentType.includes('mp3')) {
+            this.detectedMimeType = 'audio/mpeg';
+            this.detectedExt = 'mp3';
+          } else if (contentType.includes('ogg')) {
+            this.detectedMimeType = 'audio/ogg';
+            this.detectedExt = 'ogg';
+          }
+
+          if (!response.body) return;
+          const reader = response.body.getReader();
+
+          const pump = (): Promise<void> => {
+            return reader.read().then(({ done, value }) => {
+              if (done || !this.isRecording) return;
+              if (value && value.length > 0) {
+                this.directChunks.push(value);
+              }
+              return pump();
+            });
+          };
+
+          return pump();
+        })
+        .catch(() => {
+          // fetch aborted or error
+        });
+    } catch {
+      // ignore
+    }
+
+    // Strategy 2: Parallel MediaRecorder on HTMLMediaElement as resilient backup
     try {
       if (audioElement) {
         const stream =
@@ -55,71 +104,38 @@ export class StreamRecorder {
           (audioElement as any).mozCaptureStream?.();
 
         if (stream && stream.getAudioTracks().length > 0) {
-          const types = [
+          const mimeTypes = [
             'audio/webm;codecs=opus',
             'audio/webm',
-            'audio/ogg;codecs=opus',
             'audio/mp4',
+            'audio/ogg',
           ];
-          const supportedType = types.find((t) => MediaRecorder.isTypeSupported(t)) || '';
-          this.mimeType = supportedType || 'audio/webm';
+          const supported = mimeTypes.find((t) => MediaRecorder.isTypeSupported(t)) || '';
 
           const recorder = new MediaRecorder(
             stream,
-            supportedType ? { mimeType: supportedType } : undefined
+            supported ? { mimeType: supported } : undefined
           );
 
-          recorder.ondataavailable = (event) => {
-            if (event.data && event.data.size > 0) {
-              this.recordedChunks.push(event.data);
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+              this.recordedChunks.push(e.data);
             }
           };
 
-          recorder.start(1000); // 1-second chunks
+          recorder.start(1000);
           this.mediaRecorder = recorder;
-          streamCaptured = true;
         }
       }
     } catch {
-      // captureStream can fail on some mobile browsers if CORS isn't direct
-      streamCaptured = false;
-    }
-
-    // Strategy 2: If captureStream not available or for direct audio stream fetch
-    // Fetch directly via the CORS proxy endpoint /api/stream-proxy
-    if (!streamCaptured) {
-      try {
-        const proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}`;
-        this.directAbortController = new AbortController();
-
-        fetch(proxyUrl, { signal: this.directAbortController.signal })
-          .then((response) => {
-            if (!response.body) return;
-            const reader = response.body.getReader();
-            const pump = (): Promise<void> => {
-              return reader.read().then(({ done, value }) => {
-                if (done || !this.isRecording) return;
-                if (value) {
-                  this.directChunks.push(value);
-                }
-                return pump();
-              });
-            };
-            return pump();
-          })
-          .catch(() => {
-            // aborted or ended
-          });
-      } catch {
-        // fallback
-      }
+      // captureStream can fail if CORS not present on some devices
     }
 
     return true;
   }
 
   /**
-   * Stop recording, assemble audio file and automatically trigger download on device
+   * Stop recording, assemble genuine audio file and trigger instant download
    */
   public async stopAndDownload(stationName: string): Promise<RecordingResult | null> {
     if (!this.isRecording) return null;
@@ -148,42 +164,52 @@ export class StreamRecorder {
       });
     }
 
-    // Abort direct fetch if active
-    if (this.directAbortController) {
-      this.directAbortController.abort();
-      this.directAbortController = null;
+    // Abort direct stream fetch
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
     }
 
-    let audioBlob: Blob;
-    let fileExtension = 'webm';
+    let audioBlob: Blob | null = null;
+    let fileExtension = this.detectedExt;
 
-    if (this.recordedChunks.length > 0) {
-      audioBlob = new Blob(this.recordedChunks, { type: this.mimeType });
-      if (this.mimeType.includes('mp4')) fileExtension = 'm4a';
-      else if (this.mimeType.includes('ogg')) fileExtension = 'ogg';
-      else fileExtension = 'webm';
-    } else if (this.directChunks.length > 0) {
+    // Prefer bitstream direct chunks if available (> 5KB)
+    const directTotalBytes = this.directChunks.reduce(
+      (sum, chunk) => sum + chunk.length,
+      0
+    );
+
+    if (directTotalBytes > 4000) {
       audioBlob = new Blob(this.directChunks as unknown as BlobPart[], {
-        type: 'audio/mpeg',
+        type: this.detectedMimeType,
       });
-      fileExtension = 'mp3';
-    } else {
-      // Fallback empty audio clip if aborted immediately
-      audioBlob = new Blob([], { type: 'audio/webm' });
+      fileExtension = this.detectedExt;
+    } else if (this.recordedChunks.length > 0) {
+      // Fallback to MediaRecorder chunks
+      const mediaType = this.mediaRecorder?.mimeType || 'audio/webm';
+      audioBlob = new Blob(this.recordedChunks, { type: mediaType });
+      if (mediaType.includes('mp4')) fileExtension = 'm4a';
+      else if (mediaType.includes('ogg')) fileExtension = 'ogg';
+      else fileExtension = 'webm';
     }
 
-    // Sanitize station name for file
+    // Safety check: if audioBlob is null or too small (< 2KB), recording has no playable content
+    if (!audioBlob || audioBlob.size < 2000) {
+      return null;
+    }
+
+    // Format clean filename: ILGIN_Radyo_[Station]_[Date]_[Time].[ext]
     const safeStation = stationName
       .replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ_-]/g, '_')
-      .slice(0, 24);
+      .slice(0, 20);
 
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
     const fileName = `ILGIN_Radyo_${safeStation}_${dateStr}_${timeStr}.${fileExtension}`;
 
-    // Automatic download to phone / computer
-    if (typeof window !== 'undefined' && audioBlob.size > 0) {
+    // Trigger instant browser download to device
+    if (typeof window !== 'undefined') {
       const downloadUrl = URL.createObjectURL(audioBlob);
       const a = document.createElement('a');
       a.href = downloadUrl;
@@ -191,6 +217,7 @@ export class StreamRecorder {
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
+
       setTimeout(() => {
         document.body.removeChild(a);
         URL.revokeObjectURL(downloadUrl);
