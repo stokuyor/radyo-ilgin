@@ -10,6 +10,7 @@ import {
   Music,
 } from 'lucide-react';
 import { STATIONS, Station } from './data/stations';
+import Hls from 'hls.js';
 import { FrequencyDialScale } from './components/FrequencyDialScale';
 import { CountrySelector } from './components/CountrySelector';
 import { AutoScanner } from './components/AutoScanner';
@@ -62,16 +63,17 @@ export default function App() {
         }
       }
     }
-    // Default favorites
-    return ['trt-fm', 'kral-fm', 'slow-turk', 'power-fm', 'joy-fm', 'bbc-world-service'];
+    // Default favorites with NTV Radyo, TRT FM, ODTÜ, Kral FM, Borusan Klasik
+    return ['ntv-radyo', 'trt-fm', 'radyo-odtu', 'kral-fm', 'borusan-klasik', 'power-fm'];
   });
 
   // Has user interacted with the radio to enable audio
   const [hasUserStarted, setHasUserStarted] = useState(false);
   const [needsUserGesture, setNeedsUserGesture] = useState(false);
 
-  // Audio element reference
+  // Audio element reference & HLS player
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const autoScanTimerRef = useRef<number | null>(null);
 
   // Apply dark mode class to <html> for Tailwind custom-variant
@@ -142,10 +144,16 @@ export default function App() {
     }
   }, [isPoweredOn, hasUserStarted, isScanning, currentStation, signalStrength]);
 
-  // Handle station audio stream changes safely with Autoplay policy guard
+  // Handle station audio stream changes safely with Autoplay policy guard & HLS.js
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+
+    // Clean up previous HLS instance if any
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
 
     if (!isPoweredOn || !currentStation || !hasUserStarted) {
       audio.pause();
@@ -160,44 +168,92 @@ export default function App() {
     setIsLoadingAudio(true);
 
     const directUrl = currentStation.streamUrl;
-    audio.src = directUrl;
-    audio.load();
+    const isM3u8 = directUrl.includes('.m3u8');
 
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          setIsPlaying(true);
-          setIsLoadingAudio(false);
-          setNeedsUserGesture(false);
-        })
-        .catch((err) => {
-          setIsLoadingAudio(false);
-          // If browser Autoplay policy blocks audio before user interaction
-          if (err && err.name === 'NotAllowedError') {
-            setNeedsUserGesture(true);
-            setIsPlaying(false);
-            return;
-          }
+    // HLS stream on browsers supporting MSE (Chrome, Firefox, Edge, etc.)
+    if (isM3u8 && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
+      hlsRef.current = hls;
 
-          // Format or network failure: fallback to local stream proxy gracefully
-          const proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(directUrl)}`;
-          audio.src = proxyUrl;
-          audio.load();
-          audio
-            .play()
+      hls.loadSource(directUrl);
+      hls.attachMedia(audio);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise
             .then(() => {
               setIsPlaying(true);
               setIsLoadingAudio(false);
               setNeedsUserGesture(false);
             })
-            .catch(() => {
-              setIsPlaying(false);
+            .catch((err) => {
               setIsLoadingAudio(false);
-              setPlaybackError('Yayın akışı geçici olarak meşgul. Başka bir istasyon seçebilirsiniz.');
+              if (err && err.name === 'NotAllowedError') {
+                setNeedsUserGesture(true);
+                setIsPlaying(false);
+              }
             });
-        });
+        }
+      });
+
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          setIsLoadingAudio(false);
+          setIsPlaying(false);
+          setPlaybackError('Yayın akışı geçici olarak meşgul. Başka bir istasyon seçebilirsiniz.');
+        }
+      });
+    } else {
+      // Direct audio (MP3/AAC) or Safari native HLS
+      audio.src = directUrl;
+      audio.load();
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+            setIsLoadingAudio(false);
+            setNeedsUserGesture(false);
+          })
+          .catch((err) => {
+            setIsLoadingAudio(false);
+            if (err && err.name === 'NotAllowedError') {
+              setNeedsUserGesture(true);
+              setIsPlaying(false);
+              return;
+            }
+
+            // Fallback to local stream proxy gracefully if available
+            const proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(directUrl)}`;
+            audio.src = proxyUrl;
+            audio.load();
+            audio
+              .play()
+              .then(() => {
+                setIsPlaying(true);
+                setIsLoadingAudio(false);
+                setNeedsUserGesture(false);
+              })
+              .catch(() => {
+                setIsPlaying(false);
+                setIsLoadingAudio(false);
+                setPlaybackError('Yayın akışı geçici olarak meşgul. Başka bir istasyon seçebilirsiniz.');
+              });
+          });
+      }
     }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
   }, [currentStation, isPoweredOn, hasUserStarted]);
 
   // Handle Volume changes
@@ -215,8 +271,14 @@ export default function App() {
       if (next) {
         setHasUserStarted(true);
         setNeedsUserGesture(false);
-      } else if (audioRef.current) {
-        audioRef.current.pause();
+      } else {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
       }
       return next;
     });

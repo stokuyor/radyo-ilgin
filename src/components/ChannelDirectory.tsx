@@ -94,7 +94,7 @@ export const ChannelDirectory: React.FC<ChannelDirectoryProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Kanal veya tür ara... (Örn: Kral, TRT, Power, Arabesk, Diyanet)"
+              placeholder="Kanal veya frekans ara... (Örn: NTV, ODTÜ, Eksen, Kent FM, Caz, 102.8)"
               className={`w-full pl-9 pr-3 py-2 rounded-xl text-xs sm:text-sm font-mono-retro transition-colors outline-hidden border ${
                 nightMode
                   ? 'bg-black/70 border-amber-900/50 text-amber-200 placeholder:text-stone-600 focus:border-amber-500'

@@ -10,7 +10,8 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
-  const PORT = Number(process.env.PORT) || 3000;
+  // In AI Studio, the dev server must always listen on port 3000.
+  const PORT = process.env.NODE_ENV === 'production' && process.env.PORT ? Number(process.env.PORT) : 3000;
 
   // Stream proxy with CORS support for live radio broadcasts
   app.get('/api/stream-proxy', async (req, res) => {
@@ -100,7 +101,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: isHmrDisabled ? false : { server },
+        hmr: isHmrDisabled ? false : undefined,
         watch: isHmrDisabled ? null : {},
       },
       appType: 'spa',
